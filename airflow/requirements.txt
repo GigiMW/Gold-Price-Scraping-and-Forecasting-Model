@@ -3,3 +3,6 @@
 yfinance
 pandas
 numpy
+apache-airflow-providers-postgres==6.5.3
+psycopg2-binary
+SQLAlchemy

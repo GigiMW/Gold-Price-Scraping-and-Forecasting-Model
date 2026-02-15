@@ -11,6 +11,11 @@ import pandas as pd
 import yfinance as yf
 import logging
 
+# Import from the utils package and the scrape function
+import sys
+sys.path.insert(0, '/usr/local/airflow/include/utils')
+from scrape_gold import scrape_gold_prices
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,68 +43,30 @@ dag = DAG(
     tags=['scraping', 'gold', 'finance'],
 )
 
-def scrape_gold_prices_task(**context):
+def scrape_task_wrapper(**context):
     """
-    Scrape gold prices using yfinance
+    Wrapper function that calls the existing scrape_gold_prices function
     """
-    logger.info("Starting gold price scraping...")
+    logger.info("Starting gold price scraping task...")
     
     try:
-        # Set parameters
-        days = 365
+        # Use the existing scrape function
+        output_dir = '/usr/local/airflow/include/data'
+        filepath = scrape_gold_prices(days=365, output_dir=output_dir)
         
-        # Calculate date range
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
+        # Read the CSV to get data for database insertion
+        df = pd.read_csv(filepath)
         
-        logger.info(f"Fetching {days} days of data from {start_date.date()} to {end_date.date()}")
-        
-        # Download gold futures data (GC=F)
-        gold = yf.Ticker("GC=F")
-        df = gold.history(start=start_date, end=end_date)
-        
-        if df.empty:
-            raise ValueError("No data retrieved from yfinance")
-        
-        # Reset index to make Date a column
-        df = df.reset_index()
-        
-        # Rename and select columns
-        df = df.rename(columns={
-            'Date': 'Date',
-            'Open': 'Open',
-            'High': 'High', 
-            'Low': 'Low',
-            'Close': 'Close',
-            'Volume': 'Volume'
-        })
-        
-        df = df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
-        
-        # Format date
-        df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
-        
-        # Create data directory in project root
-        data_dir ='/usr/local/airflow/include/data'
-        os.makedirs(data_dir, exist_ok=True)
-        
-        # Save to CSV
-        filename = f"gold_prices_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        filepath = os.path.join(data_dir, filename)
-        df.to_csv(filepath, index=False)
-        
-        logger.info(f"✅ Successfully scraped {len(df)} records")
-        logger.info(f"✅ Data saved to: {filepath}")
-        logger.info(f"Price Range - Low: ${df['Low'].min():,.2f}, High: ${df['High'].max():,.2f}, Current: ${df['Close'].iloc[-1]:,.2f}")
-        
-        # Push filepath to XCom for downstream tasks
+        # Push data to XCom for downstream tasks
         context['ti'].xcom_push(key='filepath', value=filepath)
         context['ti'].xcom_push(key='record_count', value=len(df))
+        context['ti'].xcom_push(key='dataframe', value=df.to_json())
         
+        logger.info(f"✅ Scraping completed: {filepath}")
         return filepath
         
     except Exception as e:
-        logger.error(f"❌ Error during scraping: {str(e)}")
+        logger.error(f"❌ Error in scraping task: {str(e)}")
         raise
 
 def validate_data_task(**context):
@@ -211,7 +178,7 @@ def cleanup_old_files_task(**context):
 # Define tasks - REMOVED provide_context=True
 scrape_task = PythonOperator(
     task_id='scrape_gold_prices',
-    python_callable=scrape_gold_prices_task,
+    python_callable=scrape_task_wrapper,
     dag=dag,
 )
 

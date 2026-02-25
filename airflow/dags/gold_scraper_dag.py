@@ -14,7 +14,7 @@ from io import StringIO
 # Import from the utils package and the scrape function
 sys.path.insert(0, '/usr/local/airflow/include/utils')
 from scrape_gold import scrape_gold_prices
-from data_cleaner import clean_gold_data
+from data_cleaner import clean_gold_data , save_cleaned_data 
 from eda_analyzer import perform_eda
 from postgres_handler import PostgresHandler
 from forecasting_model import (
@@ -92,28 +92,41 @@ def scrape_task_wrapper(**context):
 # =============================================================================
 # TASK 2 — CLEAN
 # =============================================================================
-
 def clean_data_task(**context):
     """Clean and preprocess data"""
     logger.info("Starting data cleaning task...")
 
     try:
-        df_json = context['ti'].xcom_pull(key='dataframe', task_ids='scrape_gold_prices')
+        # 1️⃣ Pull raw dataframe
+        df_json = context['ti'].xcom_pull(
+            key='dataframe',
+            task_ids='scrape_gold_prices'
+        )
         df = pd.read_json(StringIO(df_json), orient='split')
 
+        # 2️⃣ Clean
         cleaned_df, cleaning_report = clean_gold_data(df)
 
-        output_dir = '/usr/local/airflow/include/data'
-        cleaned_filename = f"gold_prices_cleaned_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        cleaned_filepath = os.path.join(output_dir, cleaned_filename)
-        cleaned_df.to_csv(cleaned_filepath, index=False)
+        # 3️⃣ ✅ USE AIRFLOW EXECUTION DATE (THIS IS THE FIX)
+        execution_date = context['ds']  # e.g. 2026-02-25
 
+        cleaned_filepath = save_cleaned_data(
+            cleaned_df,
+            execution_date=execution_date,
+            output_dir='/usr/local/airflow/include/data'
+        )
+
+        # 4️⃣ Push XComs
         context['ti'].xcom_push(key='cleaned_filepath', value=cleaned_filepath)
-        context['ti'].xcom_push(key='cleaned_dataframe', value=cleaned_df.to_json(orient='split', date_format='iso'))
+        context['ti'].xcom_push(
+            key='cleaned_dataframe',
+            value=cleaned_df.to_json(orient='split', date_format='iso')
+        )
         context['ti'].xcom_push(key='cleaning_report', value=cleaning_report)
 
         logger.info(f"✅ Cleaned data saved: {cleaned_filepath}")
         return cleaned_filepath
+
     except Exception as e:
         logger.error(f"❌ Error: {str(e)}")
         raise

@@ -54,7 +54,7 @@ st.markdown("""
 
 @st.cache_resource
 def get_db_connection():
-    return DatabaseConnector()  # lightweight — no persistent conn inside
+    return DatabaseConnector()
 
 
 @st.cache_data(ttl=300)
@@ -138,7 +138,7 @@ def plot_historical_with_forecast(historical_df, forecast_df):
             hovertemplate='Date: %{x}<br>Forecast: $%{y:,.2f}<extra></extra>'
         ))
         
-        # Confidence interval
+        # Confidence interval upper
         fig.add_trace(go.Scatter(
             x=forecast_df['forecast_date'],
             y=forecast_df['upper_bound'],
@@ -149,6 +149,7 @@ def plot_historical_with_forecast(historical_df, forecast_df):
             hoverinfo='skip'
         ))
         
+        # Confidence interval lower + fill
         fig.add_trace(go.Scatter(
             x=forecast_df['forecast_date'],
             y=forecast_df['lower_bound'],
@@ -271,7 +272,6 @@ def plot_volume_analysis(df):
 
 def plot_forecast_vs_actual(historical_df, forecast_df, test_start_date):
     """Plot forecast accuracy on test set"""
-    # Filter test period from historical data
     test_actual = historical_df[historical_df['date'] >= pd.to_datetime(test_start_date)].copy()
     
     if test_actual.empty or forecast_df.empty:
@@ -279,7 +279,6 @@ def plot_forecast_vs_actual(historical_df, forecast_df, test_start_date):
     
     fig = go.Figure()
     
-    # Actual test data
     fig.add_trace(go.Scatter(
         x=test_actual['date'],
         y=test_actual['close'],
@@ -290,7 +289,6 @@ def plot_forecast_vs_actual(historical_df, forecast_df, test_start_date):
         hovertemplate='Actual: $%{y:,.2f}<extra></extra>'
     ))
     
-    # Predicted values
     fig.add_trace(go.Scatter(
         x=forecast_df['forecast_date'],
         y=forecast_df['predicted_price'],
@@ -364,20 +362,22 @@ def plot_moving_averages(df):
     
     return fig
 
-def display_model_metrics(metrics_df,df_forecasts=None):
+
+def display_model_metrics(metrics_df, df_forecasts=None):
     """Display model performance metrics"""
     if metrics_df.empty:
         st.warning("⚠️ No model performance data available")
         return
     
-    latest_metrics = metrics_df.iloc[0]
-    
+    # Always get the latest record
+    latest_metrics = metrics_df.sort_values('training_date', ascending=False).iloc[0]
 
+    # ✅ FIXED: clean retrieval of train/test size — no fallback logic needed
     train_size = int(latest_metrics.get('train_size', 0) or 0)
     test_size  = int(latest_metrics.get('test_size', 0) or 0)
 
     st.subheader("🤖 Model Performance Metrics")
-
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
@@ -409,31 +409,29 @@ def display_model_metrics(metrics_df,df_forecasts=None):
         )
     
     with st.expander("📋 Detailed Model Information"):
-     col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**Training Information:**")
-        st.write(f"- Training Size: {train_size:,} records")
-        st.write(f"- Training Date: {latest_metrics.get('training_date', 'N/A')}")
-        st.write(f"- Model: {latest_metrics['model_name']}")
-    
-    with col2:
-        st.write("**Test Period:**")
-        # These columns don't exist in DB, use forecast data instead
-        if not df_forecasts.empty:
-            st.write(f"- Start Date: {df_forecasts['forecast_date'].min().strftime('%Y-%m-%d')}")
-            st.write(f"- End Date: {df_forecasts['forecast_date'].max().strftime('%Y-%m-%d')}")
-        else:
-            st.write("- Start Date: N/A")
-            st.write("- End Date: N/A")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.write("**Training Information:**")
+            st.write(f"- Training Size: {train_size:,} records")
+            st.write(f"- Test Size: {test_size:,} records")
+            st.write(f"- Training Date: {latest_metrics.get('training_date', 'N/A')}")
+            st.write(f"- Model: {latest_metrics['model_name']}")
+
+        with col2:
+            st.write("**Test Period:**")
+            if df_forecasts is not None and not df_forecasts.empty:
+                st.write(f"- Start Date: {df_forecasts['forecast_date'].min().strftime('%Y-%m-%d')}")
+                st.write(f"- End Date: {df_forecasts['forecast_date'].max().strftime('%Y-%m-%d')}")
+            else:
+                st.write("- Start Date: N/A")
+                st.write("- End Date: N/A")
     
     # Model comparison if multiple models exist
     if len(metrics_df) > 1:
         st.subheader("📊 Model Comparison")
-        
         comparison_df = metrics_df[['model_name', 'rmse', 'mae', 'mape', 'training_date']].copy()
         comparison_df.columns = ['Model', 'RMSE', 'MAE', 'MAPE (%)', 'Training Date']
-        
         st.dataframe(comparison_df, use_container_width=True, hide_index=True)
 
 
@@ -506,11 +504,11 @@ def main():
     
     # Chart selection
     st.sidebar.subheader("📈 Chart Options")
-    show_forecast = st.sidebar.checkbox("Show AI Forecast", value=True)
+    show_forecast    = st.sidebar.checkbox("Show AI Forecast", value=True)
     show_candlestick = st.sidebar.checkbox("Candlestick Chart", value=False)
-    show_volume = st.sidebar.checkbox("Volume Analysis", value=False)
-    show_ma = st.sidebar.checkbox("Moving Averages", value=False)
-    show_comparison = st.sidebar.checkbox("OHLC Comparison", value=True)
+    show_volume      = st.sidebar.checkbox("Volume Analysis", value=False)
+    show_ma          = st.sidebar.checkbox("Moving Averages", value=False)
+    show_comparison  = st.sidebar.checkbox("OHLC Comparison", value=True)
     
     # Calculate KPIs
     kpis = calculate_kpis(df_filtered)
@@ -532,30 +530,26 @@ def main():
     with col2:
         st.metric(
             label="All-Time High",
-            value=f"${kpis.get('all_time_high', 0):,.2f}",
-            delta=None
+            value=f"${kpis.get('all_time_high', 0):,.2f}"
         )
     
     with col3:
         st.metric(
             label="All-Time Low",
-            value=f"${kpis.get('all_time_low', 0):,.2f}",
-            delta=None
+            value=f"${kpis.get('all_time_low', 0):,.2f}"
         )
     
     with col4:
         st.metric(
             label="Total Return",
             value=f"{kpis.get('total_return', 0):.2f}%",
-            delta=None,
             delta_color="normal" if kpis.get('total_return', 0) >= 0 else "inverse"
         )
     
     with col5:
         st.metric(
             label="30-Day Volatility",
-            value=f"{kpis.get('volatility_30d', 0):.2f}%",
-            delta=None
+            value=f"{kpis.get('volatility_30d', 0):.2f}%"
         )
     
     # Additional KPIs
@@ -596,13 +590,11 @@ def main():
         st.markdown("---")
         display_model_metrics(df_metrics, df_forecasts)
     
-        # Forecast vs Actual (if metrics available)
-   # Forecast vs Actual (if metrics available)
+    # Forecast vs Actual
     if not df_metrics.empty and not df_forecasts.empty:
         st.markdown("---")
         st.subheader("🎯 Forecast Accuracy Analysis")
         
-        # Use earliest forecast date as test start (no test_start_date column in DB)
         test_start = df_forecasts['forecast_date'].min()
         fig_accuracy = plot_forecast_vs_actual(df_historical, df_forecasts, test_start)
         
@@ -617,13 +609,12 @@ def main():
         fig_comparison = plot_price_comparison(df_filtered)
         st.plotly_chart(fig_comparison, use_container_width=True)
     
-    # Two-column layout for additional charts
     col_left, col_right = st.columns(2)
     
     with col_left:
         if show_candlestick:
             st.subheader("🕯️ Candlestick Chart")
-            df_candle = df_filtered.tail(90)  # Last 90 days
+            df_candle = df_filtered.tail(90)
             fig_candle = plot_candlestick(df_candle)
             st.plotly_chart(fig_candle, use_container_width=True)
         
@@ -643,14 +634,12 @@ def main():
     st.subheader("📋 Raw Data Table")
     
     if st.checkbox("Show data table"):
-        # Display options
         col1, col2 = st.columns(2)
         with col1:
             rows_to_show = st.selectbox("Rows to display:", [10, 25, 50, 100], index=1)
         with col2:
             sort_order = st.radio("Sort order:", ["Newest First", "Oldest First"], horizontal=True)
         
-        # Prepare display data
         display_df = df_filtered[['date', 'open', 'high', 'low', 'close', 'volume']].copy()
         
         if sort_order == "Newest First":
@@ -659,18 +648,11 @@ def main():
             display_df = display_df.sort_values('date', ascending=True)
         
         display_df = display_df.head(rows_to_show)
-        
-        # Format for display
         display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
         display_df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
         
-        st.dataframe(
-            display_df,
-            use_container_width=True,
-            hide_index=True
-        )
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
         
-        # Download button
         csv = df_filtered.to_csv(index=False)
         st.download_button(
             label="⬇️ Download Complete Dataset as CSV",
@@ -690,13 +672,8 @@ def main():
             forecast_display['forecast_date'] = forecast_display['forecast_date'].dt.strftime('%Y-%m-%d')
             forecast_display.columns = ['Date', 'Predicted Price', 'Lower Bound', 'Upper Bound', 'Model']
             
-            st.dataframe(
-                forecast_display,
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(forecast_display, use_container_width=True, hide_index=True)
             
-            # Download forecast
             csv_forecast = df_forecasts.to_csv(index=False)
             st.download_button(
                 label="⬇️ Download Forecast Data as CSV",

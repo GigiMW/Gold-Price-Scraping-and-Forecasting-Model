@@ -373,17 +373,11 @@ def display_model_metrics(metrics_df,df_forecasts=None):
     latest_metrics = metrics_df.iloc[0]
     
 
-    if 'train_size' not in latest_metrics:
-        if 'df_historical' in globals():
-            forecast_horizon = df_forecasts['forecast_date'].nunique() if not df_forecasts.empty else 0
-            train_size = max(len(df_historical) - forecast_horizon, 0)
-        else:
-            train_size = 0
-    else:
-        train_size = latest_metrics['train_size']
-    
+    train_size = int(latest_metrics.get('train_size', 0) or 0)
+    test_size  = int(latest_metrics.get('test_size', 0) or 0)
+
     st.subheader("🤖 Model Performance Metrics")
-    
+
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:

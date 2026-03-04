@@ -386,7 +386,7 @@ def main():
 
     # ── Chart toggles ─────────────────────────────────────────────────
     st.sidebar.subheader("📈 Chart Options")
-    show_forecast    = st.sidebar.checkbox("Show AI Forecast",  value=True)
+    show_forecast    = st.sidebar.checkbox("Show Forecast",  value=True)
     show_candlestick = st.sidebar.checkbox("Candlestick Chart", value=False)
     show_volume      = st.sidebar.checkbox("Volume Analysis",   value=False)
     show_ma          = st.sidebar.checkbox("Moving Averages",   value=False)
